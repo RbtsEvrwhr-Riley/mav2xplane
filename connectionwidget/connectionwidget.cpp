@@ -21,34 +21,76 @@ QStringList availablePorts()
     return ports;
 }
 
+
 ConnectionWidget::ConnectionWidget(int type, QWidget *parent)
     : QGroupBox(QObject::tr((type)?"PX4":"Xplane"),parent),mType(type)
 {
-    QFormLayout *formLayout = new QFormLayout;
+	formLayout = new QFormLayout;
+	comFormLayout = new QFormLayout;
 
-    if(!type) {
+	if(!type) {
+		formLayout = new QFormLayout;
+
         ipEdit = new QLineEdit;
         ipEdit->setInputMask("000.000.000.000");
 
-        ipEdit->setText("192.168.1.3");
+        ipEdit->setText("127.0.0.1");
         formLayout->addRow(QObject::tr("IP:"), ipEdit);
 
         port = new QLineEdit("49005");
         port->setInputMask("00000");
 
         formLayout->addRow(QObject::tr("port:"), port);
-    } else {
-        comBox = new QComboBox;
+    }
+	else
+	{    
+		formLayout = new QFormLayout;
+
+		comButtons = new QGroupBox;
+		comCom = new QRadioButton(tr("&COM"));
+		comUdp = new QRadioButton(tr("&UDP"));
+		comUdp -> setChecked(true);
+		
+		connect(comCom, SIGNAL(clicked()), this, SLOT(checkComRadios()));
+		connect(comUdp, SIGNAL(clicked()), this, SLOT(checkComRadios()));
+		
+		QHBoxLayout *comLayout = new QHBoxLayout;
+		comButtons -> setLayout(comLayout);
+		comLayout -> addWidget(comCom);
+		comLayout -> addWidget(comUdp);
+		// ip
+		formLayout -> addRow(comButtons);
+		
+		ipEdit = new QLineEdit;
+        ipEdit->setInputMask("000.000.000.000");
+
+        ipEdit->setText("127.0.0.1");
+        formLayout->addRow(QObject::tr("IP:"), ipEdit);
+
+        port = new QLineEdit("14560");
+        port->setInputMask("00000");
+
+        formLayout->addRow(QObject::tr("port:"), port);
+		
+		// com
+		comBox = new QComboBox;
         comBox->addItems(availablePorts());
-        formLayout->addRow(QObject::tr("COM:"),comBox);
+		
+        comFormLayout->addRow(QObject::tr("COM:"),comBox);
+		
 
         bauds = new QComboBox;
         bauds->addItems(baudList);
         bauds->setCurrentIndex(1);
-        formLayout->addRow(QObject::tr("baud:"),bauds);
+        comFormLayout->addRow(QObject::tr("baud:"),bauds);
+		comFormLayout -> itemAt(0) -> widget() -> setVisible(false);
+		comFormLayout -> itemAt(1) -> widget() -> setVisible(false);
 
-        QTimer::singleShot(10,this,SLOT(updatePortList()));
-    }
+		comFormLayout -> itemAt(2) -> widget() -> setVisible(false);
+		comFormLayout -> itemAt(3) -> widget() -> setVisible(false);
+
+        QTimer::singleShot(10,this,SLOT(updatePortList()));	
+	}
 
 
     indr = new Indicator(QObject::tr("Link"),this);
@@ -56,11 +98,38 @@ ConnectionWidget::ConnectionWidget(int type, QWidget *parent)
     QVBoxLayout *radioLayout = new QVBoxLayout;
     radioLayout->addWidget(indr);
 
-    QVBoxLayout *layout = new QVBoxLayout;
+    QVBoxLayout *layout = new QVBoxLayout;	
     layout->addLayout(formLayout);
+	layout->addLayout(comFormLayout);
     layout->addLayout(radioLayout);
     layout->addStretch();
     setLayout(layout);
+}
+
+void ConnectionWidget::checkComRadios()
+{
+	if(comCom -> isChecked())
+	{
+		for(int x = 1; x < formLayout -> rowCount() * 2 - 1; x++)
+		{
+			formLayout -> itemAt(x) -> widget() -> setVisible(false);
+		}
+		for(int x = 0; x < comFormLayout -> rowCount() * 2; x++)
+		{
+			comFormLayout -> itemAt(x) -> widget() -> setVisible(true);
+		}
+	}
+	else
+	{
+		for(int x = 1; x < formLayout -> rowCount() * 2 - 1; x++)
+		{
+			formLayout -> itemAt(x) -> widget() -> setVisible(true);
+		}
+		for(int x = 0; x < comFormLayout -> rowCount() * 2; x++)
+		{
+			comFormLayout -> itemAt(x) -> widget() -> setVisible(false);
+		}
+	}
 }
 
 QString ConnectionWidget::getName() const

@@ -2,6 +2,15 @@
 #include <QDateTime>
 #include <qmath.h>
 #include <QDebug>
+#include <QTimer>
+#include <QList>
+#include <QMutexLocker>
+#include <QNetworkInterface>
+#include <QHostInfo>
+#include <QCoreApplication>
+#include <iostream>
+#include <sstream>
+#include <iomanip>
 #include <unistd.h>
 #include "px4_custom_mode.h"
 
@@ -22,10 +31,21 @@ const char* UAS::_rtgsFlightMode =        "Return to Groundstation";
 const char* UAS::_readyFlightMode =       "Ready";
 const char* UAS::_simpleFlightMode =      "Simple";
 
-UAS::UAS(QString portname, int baud):_baud(baud),lastSendTimeGPS(0)
+// we need this bad boy to connect to a remote listening socket in a SITL to send and receive mavlink messages.
+UAS::UAS(QString remoteHost, int remotePort)
 {
-    serial.setPortName(portname);
+	//qDebug("Setting up socket");
+    socket = NULL;
+	_should_exit = false;
 
+	this->remoteHost = remoteHost;
+    this->remotePort = remotePort;
+    connectState = false;
+    moveToThread(this);
+
+    setTerminationEnabled(false);
+
+	//qDebug("Setting up struct");
     struct Modes2Name {
         uint8_t     main_mode;
         uint8_t     sub_mode;
@@ -71,39 +91,65 @@ UAS::UAS(QString portname, int baud):_baud(baud),lastSendTimeGPS(0)
 
         _flightModeInfoList.append(info);
     }
+
 }
+
+void UAS::run()
+{
+	//qDebug("Starting UAS");
+    if (connectState) {
+        return;
+    }
+
+    socket = new QUdpSocket(this);
+    socket->moveToThread(this);
+	socket->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, 65536);
+    connectState = socket->bind(QHostAddress::LocalHost, 19999, QAbstractSocket::ReuseAddressHint); // listen on localhost no port, no idea why
+    if (!connectState) {
+        socket->deleteLater();
+        socket = NULL;
+        return;
+    }
+
+    QObject::connect(socket, &QUdpSocket::readyRead, this, &UAS::readData,Qt::QueuedConnection);
+//s	QObject::connect(this, SIGNAL(writeExternal(uint8_t*, qint64)), this, SLOT(writeBytes(uint8_t* data, qint64 size));
+
+    // _should_exit = false;
+	bool armed = true;
+    while(!_should_exit) {
+        QCoreApplication::processEvents();
+		//armed = !armed;
+		//setArmed(armed);
+        msleep(2);
+    }
+	//qDebug("Exiting");
+    connectState = false;
+
+    disconnect(socket, &QUdpSocket::readyRead, this, &UAS::readData);
+
+    socket->close();
+    socket->deleteLater();
+    socket = NULL;
+}
+
 
 UAS::~UAS()
 {    
-
-}
-
-bool UAS::openPort()
-{
-    if(!serial.open(QIODevice::ReadWrite)){
-        qDebug() << "failed open port";
-        emit portError(serial.errorString());
-        return false;
+    setHilMode(false);
+    connectState = false;
+	//qDebug("Closing if needed");
+    if (socket) {
+        disconnect(socket, &QUdpSocket::readyRead, this, &UAS::readData);
+        socket->close();
+        socket->deleteLater();
+        socket = NULL;
     }
-
-    serial.setBaudRate(_baud);
-    serial.setDataBits(QSerialPort::Data8);
-    serial.setFlowControl(QSerialPort::NoFlowControl);
-    serial.setStopBits(QSerialPort::OneStop);
-
-    emit portOpened();
-
-    connect(&serial,SIGNAL(readyRead()),this,SLOT(readData()));
-    connect(&serial,&QIODevice::readyRead,this,&UAS::readData);
-
-    return true;
 }
-
 
 void UAS::sendHilGps(quint64 time_us, double lat, double lon, double alt, int fix_type, float eph, float epv, float vel, float vn, float ve, float vd, float cog, int satellites)
 {
 
-
+	//qDebug("MAV-HIL Send GPS");
     if (UAS::groundTimeMilliseconds() - lastSendTimeGPS < 100)
         return;
 
@@ -116,7 +162,7 @@ void UAS::sendHilGps(quint64 time_us, double lat, double lon, double alt, int fi
 
     mavlink_message_t msg;
     mavlink_msg_hil_gps_pack_chan(255, 0, 2,&msg,
-                                  time_us, fix_type, lat*1e7, lon*1e7, alt*1e3, eph*1e2, epv*1e2, vel*1e2, vn*1e2, ve*1e2, vd*1e2, course*1e2, satellites);
+                                  time_us, fix_type, lat*1e7, lon*1e7, alt*1e3, eph*1e2, epv*1e2, vel*1e2, vn*1e2, ve*1e2, vd*1e2, course*1e2, satellites, 0, 0);
 
     lastSendTimeGPS = UAS::groundTimeMilliseconds();
     writeMessage(msg);
@@ -193,6 +239,7 @@ float UAS::addZeroMeanNoise(float truth_meas, float noise_var)
 void UAS::sendHilSensors(quint64 time_us, float xacc, float yacc, float zacc, float rollspeed, float pitchspeed, float yawspeed,
                          float xmag, float ymag, float zmag, float abs_pressure, float diff_pressure, float pressure_alt, float temperature, quint32 fields_changed)
 {
+	//qDebug("MAV Sending HIL sensors");
     float noise_scaler = 0.0001f;
     float xacc_var = noise_scaler * 0.2914f;
     float yacc_var = noise_scaler * 0.2914f;
@@ -229,27 +276,52 @@ void UAS::sendHilSensors(quint64 time_us, float xacc, float yacc, float zacc, fl
     mavlink_msg_hil_sensor_pack_chan(255, 0, 2,&msg,
                                      time_us, xacc_corrupt, yacc_corrupt, zacc_corrupt, rollspeed_corrupt, pitchspeed_corrupt,
                                      yawspeed_corrupt, xmag_corrupt, ymag_corrupt, zmag_corrupt, abs_pressure_corrupt,
-                                     diff_pressure_corrupt, pressure_alt_corrupt, temperature_corrupt, fields_changed);
+                                     diff_pressure_corrupt, pressure_alt_corrupt, temperature_corrupt, fields_changed, 0);
 
 
     writeMessage(msg);
 }
+std::string hexStr(const char *data, int len)
+{
+     std::stringstream ss;
+     ss << std::hex;
+
+     for( int i(0) ; i < len; ++i )
+         ss << std::setw(2) << std::setfill('0') << (int)data[i];
+
+     return ss.str();
+}
 
 void UAS::readData()
 {
-    QByteArray data = serial.readAll();
+    const qint64 maxLength = 65536;
+    char tempdata[maxLength];
+    QHostAddress sender;
+    quint16 senderPort;
 
+    int s = socket->pendingDatagramSize(); // this is supposed to be a signed int
+	//qDebug() << s;
+    if (s > maxLength) std::cerr << __FILE__ << __LINE__ << " UDP datagram overflow, allowed to read less bytes than datagram size: " << s << std::endl;
+    socket->readDatagram(tempdata, maxLength, &sender, &senderPort);
+    if (s > maxLength) {
+        std::string headStr = std::string(tempdata, tempdata+5);
+        std::cerr << __FILE__ << __LINE__ << " UDP datagram header: " << headStr << std::endl;
+    }
+	//qDebug() << "FROM: " << sender.toString();	
+	emit hostConnected(sender.toString());
+	std::string output = hexStr(tempdata, s);
     mavlink_message_t msg;
     int chan = 0;
     mavlink_status_t status;
-
-    for(int iter=0; iter<data.size(); ++iter)	{
-        uint8_t msgReceived = mavlink_parse_char(chan, data.data()[iter], &msg, &status);
+	//qDebug() << "Reading a mavlink message" << s;
+    for(int iter=0; iter< s; ++iter)	{
+        uint8_t msgReceived = mavlink_parse_char(chan, tempdata[iter], &msg, &status);
         if (msgReceived > 0)
         {
             switch(msg.msgid)
             {
             case MAVLINK_MSG_ID_HEARTBEAT : {
+				//qDebug("Got heartbeat");
                 mavlink_heartbeat_t heartbeat;
                 mavlink_msg_heartbeat_decode(&msg, &heartbeat);
                 _base_mode =  heartbeat.base_mode;
@@ -261,49 +333,38 @@ void UAS::readData()
 
             case MAVLINK_MSG_ID_HIL_CONTROLS:
             {
+				qDebug("Got hil controls");
                 mavlink_hil_controls_t hil;
                 mavlink_msg_hil_controls_decode(&msg, &hil);
                 emit hilControlsChanged(hil.time_usec, hil.roll_ailerons, hil.pitch_elevator, hil.yaw_rudder, hil.throttle, hil.mode, hil.nav_mode);
 
                 break;
             }
-
-            case MAVLINK_MSG_ID_HIL_ACTUATOR_CONTROLS:
+			case MAVLINK_MSG_ID_HIL_ACTUATOR_CONTROLS:
             {
+				//qDebug("Got hil actuator controls");
                 mavlink_hil_actuator_controls_t hil;
                 mavlink_msg_hil_actuator_controls_decode(&msg, &hil);
-                emit hilActuatorControlsChanged(hil.time_usec, hil.flags,
-                                                hil.controls[0],
-                        hil.controls[1],
-                        hil.controls[2],
-                        hil.controls[3],
-                        hil.controls[4],
-                        hil.controls[5],
-                        hil.controls[6],
-                        hil.controls[7],
-                        hil.controls[8],
-                        hil.controls[9],
-                        hil.controls[10],
-                        hil.controls[11],
-                        hil.controls[12],
-                        hil.controls[13],
-                        hil.controls[14],
-                        hil.controls[15],
-                        hil.mode);
+				// less expensive than 16 compares but I'll take better ideas if you got one
+				float controls[17];
+				std::copy(std::begin(hil.controls), std::end(hil.controls), std::begin(controls));
+				controls[16] = 0;
+				emit hilActuatorControlsChanged(hil.time_usec, hil.flags,
+                                                controls, hil.mode);
                 break;
             }
             case MAVLINK_MSG_ID_COMMAND_ACK:
             {
                 mavlink_command_ack_t ack;
                 mavlink_msg_command_ack_decode(&msg,&ack);
-                qDebug()<<"command: " <<ack.command << "; result: "<<ack.result;
+                //qDebug()<<"command: " <<ack.command << "; result: "<<ack.result;
                 break;
             }
             case MAVLINK_MSG_ID_STATUSTEXT:
             {
                 mavlink_statustext_t status;
                 mavlink_msg_statustext_decode(&msg, &status);
-                qDebug() << status.severity << status.text;
+                //qDebug() << status.severity << status.text;
                 break;
             }
             case MAVLINK_MSG_ID_MISSION_CURRENT:
@@ -315,39 +376,42 @@ void UAS::readData()
             }
             case MAVLINK_MSG_ID_AUTOPILOT_VERSION:
             {
+				//qDebug("Got version");
                 _handleAutopilotVersion(&msg);
             }
 
             case MAVLINK_MSG_ID_GLOBAL_POSITION_INT:
             {
+				//qDebug("Got GPS");
                 mavlink_global_position_int_t pos;
                 mavlink_msg_global_position_int_decode(&msg,&pos);
 
-                qDebug() << "alt:" << pos.alt/1000.0 << "alt rel:" << pos.relative_alt/1000.0;
+                //qDebug() << "alt:" << pos.alt/1000.0 << "alt rel:" << pos.relative_alt/1000.0;
                 break;
             }
             default:{
+				//qDebug() << "Got unknown" << msg.msgid;
             }
             }
         }
+		
     }
+	//qDebug("Bytehonk %s", output.c_str());
 }
 
 void UAS::writeMessage(mavlink_message_t msg)
 {
+	//qDebug("Writing a mavlink message");
     uint8_t data[4096];
     uint16_t bytesToWrite = mavlink_msg_to_send_buffer(data,&msg);
 
-    if(bytesToWrite != serial.write((char*)data,bytesToWrite))
-        qDebug() << "write failed";
-
+    writeBytes(data, bytesToWrite);
 }
-
 
 void UAS::setHilMode(bool hilMode)
 {
 
-    qDebug() << "setting hil" << ((hilMode)?"on":"off");
+    //qDebug() << "setting hil" << ((hilMode)?"on":"off");
     mavlink_message_t msg;
 
 
@@ -364,6 +428,7 @@ void UAS::setHilMode(bool hilMode)
 
 void UAS::setArmed(bool armed)
 {
+	//qDebug("Arm called");
     mavlink_message_t msg;
     mavlink_command_long_t cmd;
 
@@ -386,6 +451,7 @@ void UAS::setArmed(bool armed)
 
 void UAS::takeoff()
 {
+	//qDebug("Takeoff called");
     mavlink_message_t msg;
 
     mavlink_command_long_t cmd;
@@ -408,6 +474,7 @@ void UAS::takeoff()
 
 void UAS::requestAutopilotCapabilites()
 {
+	//qDebug("Requesting autopilot capabilities");
     mavlink_message_t msg;
     mavlink_command_long_t cmd;
     cmd.command = MAV_CMD_REQUEST_AUTOPILOT_CAPABILITIES;
@@ -418,6 +485,7 @@ void UAS::requestAutopilotCapabilites()
 
 void UAS::setFlightMode(QString modeName)
 {
+	//qDebug("Set Flight Mode %s", modeName);
     uint32_t    custom_mode;
     uint8_t    base_mode;
 
@@ -428,7 +496,7 @@ void UAS::setFlightMode(QString modeName)
         newBaseMode |= base_mode;
 
         mavlink_message_t msg;
-        qDebug() << newBaseMode << custom_mode;
+        //qDebug() << newBaseMode << custom_mode;
         mavlink_msg_set_mode_pack(255,
                                   0,
                                   &msg,
@@ -485,7 +553,7 @@ QString UAS::flightMode(uint8_t base_mode, uint32_t custom_mode) const
     } else {
         qWarning() << "PX4 Flight Stack flight mode without custom mode enabled?";
     }
-    qDebug() << flightMode;
+    //qDebug() << "Setting flight mode: " << flightMode;
     return flightMode;
 }
 
@@ -524,13 +592,29 @@ void UAS::_handleAutopilotVersion(mavlink_message_t* message)
         if (notifyUser)
         {
             _versionNotified = true;
-            qDebug() << QString("QGroundControl supports PX4 Pro firmware Version %1.%2.%3 and above. You are using a version prior to that which will lead to unpredictable results. Please upgrade your firmware.").arg(supportedMajorVersion).arg(supportedMinorVersion).arg(supportedPatchVersion);
+            //qDebug() << QString("QGroundControl supports PX4 Pro firmware Version %1.%2.%3 and above. You are using a version prior to that which will lead to unpredictable results. Please upgrade your firmware.").arg(supportedMajorVersion).arg(supportedMinorVersion).arg(supportedPatchVersion);
         }
     }
 }
 
-void UAS::closePort()
+void UAS::writeBytes(const uint8_t* data, qint64 size)
 {
-    setHilMode(false);
-    serial.close();
+    if (!data) return;
+	//qDebug() << "Sending to" << remoteHost.toString() << remotePort;
+    // If socket exists and is connected, transmit the data
+    if (socket && connectState)
+    {
+        socket->writeDatagram((char*)data, size, remoteHost, remotePort);
+		//qDebug() << "Writing datagram though";
+    }
+	else
+	{
+		//qDebug() << "Not connected" << connectState;
+	}
+	
+}
+
+void UAS::stop()
+{
+	_should_exit = true;
 }

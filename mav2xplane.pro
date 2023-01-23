@@ -32,6 +32,6 @@ HEADERS  += mainwindow.h \
 
     QGC/px4_custom_mode.h
 
-INCLUDEPATH += ../../../protocols/mavlink/common \
+INCLUDEPATH += c_library_v2/common \
                ../linkparamswgt \
                ../indicator

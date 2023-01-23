@@ -5,6 +5,7 @@
 #include "QGC/XPlaneLink.h"
 #include <QSpinBox>
 #include <QLabel>
+#include <QTableWidget>
 #include "indicator/indicator.h"
 
 class ConnectionWidget;
@@ -24,8 +25,10 @@ class MainWindow : public QMainWindow
 
        ConnectionWidget *xplane_connection, *px4_connection;
        QWidget *centralWidget;
+	   QWidget *channelWindow;
+	   QTableWidget *servoTable,*chanTable;
        QGridLayout *grid;
-       QPushButton *startBtn, *armBtn, *takeoffBtn, *enableHilBtn, *setModeBtn;
+       QPushButton *startBtn, *enableHilBtn, *openChannelWindowButton;//*armBtn, *takeoffBtn, *enableHilBtn, *setModeBtn;
        QComboBox *modeBox;
 
        QString remoteHost, portName;
@@ -40,12 +43,19 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(QWidget *parent = 0);
     ~MainWindow();
+	
+signals:
+	void changeFlightMode(QString text);
+	void takeoff();
+	void toggleArmed(bool armed);
 
 private slots:
-
+	void saveChannels();
+	void closeChannels();
     void onXplaneConnected(QString host);
     void onPx4Connected();
     void onStartClicked();
+	void onOpenChannelWindowClicked();
     void onPortError(QString error);
     void onArmClicked();
     void onTakeoffClicked();

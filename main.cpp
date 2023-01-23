@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include <QApplication>
+#include <QCoreApplication>
 #include <map>
 #include <QDebug>
 #include <iostream>
@@ -20,7 +21,9 @@ int main(int argc, char *argv[])
     std::map<float,int>::iterator it1 = q.begin();
     for(it1=q.begin(); it1 != q.end(); ++it1)
         qDebug() << it1->first << " " << it1->second;*/
-
+	QCoreApplication::setOrganizationName("Robots Everywhere");
+    QCoreApplication::setOrganizationDomain("robots-everywhere.com");
+    QCoreApplication::setApplicationName("Mav2Xplane");
 
 
 

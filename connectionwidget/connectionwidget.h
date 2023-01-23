@@ -3,6 +3,7 @@
 
 #include <QGroupBox>
 #include <QColor>
+#include <QFormLayout>
 
 class QLineEdit;
 class QRadioButton;
@@ -26,12 +27,16 @@ public:
     quint16 getPort() const;
     int getBaud() const;
 
-
 private slots:
     void updatePortList();
+	void checkComRadios();
 
 private:
+	QFormLayout *formLayout, *comFormLayout;
     QLineEdit *ipEdit;
+	QGroupBox *comButtons;
+	QRadioButton *comCom;
+	QRadioButton *comUdp;
     QComboBox *comBox;
     QPushButton *btnApply;
     QComboBox *bauds;

@@ -46,7 +46,9 @@ class QGCXPlaneLink : public QThread
 {
     Q_OBJECT
 
-
+	int throttles = 8;
+	int throttleMap[16] = {4,0,1,2,3,8,8,8,8,8,8,8,8,8,8,8};
+	int controlMap[3] = {7, 5, 8};
     bool _sensorHilEnabled;
     bool xPlaneConnected;
     unsigned int xPlaneVersion;
@@ -58,6 +60,7 @@ class QGCXPlaneLink : public QThread
     bool _useHilActuatorControls;
 
 public:
+	QGCXPlaneLink();
     QGCXPlaneLink(QString remoteHost, quint16 remotePort);
     ~QGCXPlaneLink();
 
@@ -72,7 +75,9 @@ public:
     void setRemoteHost(QString host);
     void enableHilActuatorControls(bool enable);
     void sendDataRef(QString ref, float value);
-    void updateActuatorControls(quint64 time, quint64 flags, float ctl_0, float ctl_1, float ctl_2, float ctl_3, float ctl_4, float ctl_5, float ctl_6, float ctl_7, float ctl_8, float ctl_9, float ctl_10, float ctl_11, float ctl_12, float ctl_13, float ctl_14, float ctl_15, quint8 mode);
+	void updateActuatorControls(quint64 time, quint64 flags, float* controls, quint8 mode);
+	void setup(QString remoteHost, quint16 localPort);
+    //void updateActuatorControls(quint64 time, quint64 flags, float ctl_0, float ctl_1, float ctl_2, float ctl_3, float ctl_4, float ctl_5, float ctl_6, float ctl_7, float ctl_8, float ctl_9, float ctl_10, float ctl_11, float ctl_12, float ctl_13, float ctl_14, float ctl_15, quint8 mode);
 
 
 
@@ -93,6 +98,14 @@ public slots:
     void writeBytes(const char* data, qint64 length);
 
     void setSensorHILEnabled(bool enabled){_sensorHilEnabled = enabled;}
+	
+	/**
+	* @brief Sets the X-Plane channels 1-16 (by index) to the selected MAVLink channels.
+	* @param channels pointer to the array mapping channels
+	**/
+	void setThrottleMap(int xChan, int mavChan);
+	void setControlsMap(int xChan, int mavChan);
+	void getChannelMapFromPreferences();
     void stop();
 
 protected:    
