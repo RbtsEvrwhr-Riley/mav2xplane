@@ -32,6 +32,6 @@ HEADERS  += mainwindow.h \
 
     QGC/px4_custom_mode.h
 
-INCLUDEPATH += c_library_v2/common \
+INCLUDEPATH += c_library_v2/development \
                ../linkparamswgt \
                ../indicator
