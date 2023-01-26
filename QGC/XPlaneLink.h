@@ -47,7 +47,7 @@ class QGCXPlaneLink : public QThread
     Q_OBJECT
 
 	int throttles = 8;
-	int throttleMap[16] = {4,0,1,2,3,8,8,8,8,8,8,8,8,8,8,8};
+	int throttleMap[16] = {4,0,1,2,3,16,16,16,16,16,16,16,16,16,16,16};
 	int controlMap[3] = {7, 5, 8};
     bool _sensorHilEnabled;
     bool xPlaneConnected;

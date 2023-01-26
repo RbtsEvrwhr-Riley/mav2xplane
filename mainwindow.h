@@ -51,6 +51,8 @@ signals:
 
 private slots:
 	void saveChannels();
+	void updateChanQGCLabel(int row, int col);
+	void updateServoQGCLabel(int row, int col);
 	void closeChannels();
     void onXplaneConnected(QString host);
     void onPx4Connected();

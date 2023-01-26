@@ -137,7 +137,7 @@ UAS::~UAS()
 {    
     setHilMode(false);
     connectState = false;
-	//qDebug("Closing if needed");
+	qDebug("Closing if needed");
     if (socket) {
         disconnect(socket, &QUdpSocket::readyRead, this, &UAS::readData);
         socket->close();

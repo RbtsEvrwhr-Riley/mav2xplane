@@ -8,6 +8,7 @@
 #include "../indicator/indicator.h"
 #include <QDebug>
 #include <QTimer>
+#include <QSettings>
 
 const QStringList baudList = {"57600","115200"};
 QStringList availablePorts()
@@ -27,6 +28,7 @@ ConnectionWidget::ConnectionWidget(int type, QWidget *parent)
 {
 	formLayout = new QFormLayout;
 	comFormLayout = new QFormLayout;
+	QSettings settings("Robots Everywhere", "Mav2Xplane");
 
 	if(!type) {
 		formLayout = new QFormLayout;
@@ -34,10 +36,13 @@ ConnectionWidget::ConnectionWidget(int type, QWidget *parent)
         ipEdit = new QLineEdit;
         ipEdit->setInputMask("000.000.000.000");
 
-        ipEdit->setText("127.0.0.1");
+		ipEdit->setText(settings.value("xplaneip", "127.0.0.1").toString());
         formLayout->addRow(QObject::tr("IP:"), ipEdit);
 
+
         port = new QLineEdit("49005");
+		port->setText(settings.value("xplaneport", "49005").toString());
+
         port->setInputMask("00000");
 
         formLayout->addRow(QObject::tr("port:"), port);
@@ -65,9 +70,13 @@ ConnectionWidget::ConnectionWidget(int type, QWidget *parent)
         ipEdit->setInputMask("000.000.000.000");
 
         ipEdit->setText("127.0.0.1");
+		ipEdit->setText(settings.value("px4ip", "127.0.0.1").toString());
+
         formLayout->addRow(QObject::tr("IP:"), ipEdit);
 
         port = new QLineEdit("14560");
+		port->setText(settings.value("px4port", "49005").toString());
+
         port->setInputMask("00000");
 
         formLayout->addRow(QObject::tr("port:"), port);
@@ -134,10 +143,7 @@ void ConnectionWidget::checkComRadios()
 
 QString ConnectionWidget::getName() const
 {
-    if(!mType)
-        return ipEdit->text();
-
-    else return comBox->currentText();
+    return ipEdit->text();
 }
 
 void ConnectionWidget::setColor(const QColor &c)

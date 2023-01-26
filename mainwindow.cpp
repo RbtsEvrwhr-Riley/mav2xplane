@@ -163,7 +163,7 @@ void MainWindow::onXplaneConnected(QString host)
 
 void MainWindow::onStartClicked()
 {
-	qDebug("Clicked start");
+	qDebug("Clicked start/stop");
     if(connected)
         stopSimulation();
 
@@ -181,6 +181,9 @@ void MainWindow::onStartClicked()
 		qDebug("Starting UAS class");
 		qDebug("%i", px4_connection->getPort());
         uas = new UAS(px4_connection->getName(),px4_connection->getPort());
+		QSettings settings("Robots Everywhere", "Mav2Xplane");
+		settings.setValue("px4ip", px4_connection->getName());
+		settings.setValue("px4port", px4_connection->getPort());
         connect(uas,&UAS::hostConnected,this,&MainWindow::onPx4Connected);
         //connect(uas,&UAS::armStayChanged,this,&MainWindow::armStayChanged);
         //connect(uas,&UAS::flightModeChanged,this,&MainWindow::flightModeChanged);
@@ -190,7 +193,8 @@ void MainWindow::onStartClicked()
 	    uas->start();
 		qDebug("Starting QGCXplaneLink");
         link -> setup(xplane_connection->getName(),xplane_connection->getPort());
-
+		settings.setValue("xplaneip", xplane_connection->getName());
+		settings.setValue("xplaneport", xplane_connection->getPort());
         remoteHost = xplane_connection->getName();
         connect(link,&QGCXPlaneLink::hostConnected,this,&MainWindow::onXplaneConnected);
         connect(uas, &UAS::hilControlsChanged,link,&QGCXPlaneLink::updateControls,Qt::QueuedConnection);
@@ -241,9 +245,8 @@ void MainWindow::stopSimulation()
 {
     link->stop();
     uas->stop();
-
-    link->deleteLater();
-    uas->deleteLater();
+	link -> wait();
+	uas -> wait();
 
     disconnect(link,&QGCXPlaneLink::hostConnected,this,&MainWindow::onXplaneConnected);
     disconnect(uas, &UAS::hilControlsChanged,link,&QGCXPlaneLink::updateControls);
@@ -256,9 +259,9 @@ void MainWindow::stopSimulation()
 
     px4_connection->setColor(Qt::red);
     xplane_connection->setColor(Qt::red);
-    armIndicator->setColor(Qt::transparent);
-    armIndicator->setText("ARM STATUS");
-    mode->setText("FLIGHT MODE");
+    //armIndicator->setColor(Qt::transparent);
+    //armIndicator->setText("ARM STATUS");
+    //mode->setText("FLIGHT MODE");
     enableButtons(false);
 }
 
@@ -282,16 +285,16 @@ void MainWindow::onOpenChannelWindowClicked()
 	l -> addWidget(throttle);
 	QLabel *sixteen = new QLabel(tr("0-15 for throttles, 16 for unused"));
 	l -> addWidget(sixteen);
-	chanTable = new QTableWidget(16, 1);
+	chanTable = new QTableWidget(16, 2);
 	QStringList topLabels;
-	topLabels << "MAV Channel";
+	topLabels << "MAV Channel" << "QGC Channel";
 	chanTable -> setHorizontalHeaderLabels(topLabels);
 	l -> addWidget(chanTable);
 	QLabel *servos = new QLabel(tr("XPlane Controls"));
 	l -> addWidget(servos);
 	QStringList servoLabels;
 	servoLabels << "Roll" << "Pitch" << "Yaw";
-	servoTable = new QTableWidget(3, 1);
+	servoTable = new QTableWidget(3, 2);
 	servoTable -> setHorizontalHeaderLabels(topLabels);
 	servoTable -> setVerticalHeaderLabels(servoLabels);
 	l -> addWidget(servoTable);
@@ -299,17 +302,26 @@ void MainWindow::onOpenChannelWindowClicked()
 	
 	QSettings settings("Robots Everywhere", "Mav2Xplane");
 	settings.beginGroup("throttles");
+	QColor color2(QColor("light grey"));
+	connect(chanTable, SIGNAL(cellChanged(int, int)), this, SLOT(updateChanQGCLabel(int, int)));
+
 	for(int x = 0; x < 16; x++)
 	{
 		chanTable -> setItem(x, 0, new QTableWidgetItem(settings.value(QString::number(x)).toString(), 0));
+		chanTable -> item(x, 1) -> setFlags((chanTable -> item(x, 1)->flags() ^ Qt::ItemIsEditable ^ Qt::ItemIsSelectable));
+		chanTable -> item(x, 1) -> setBackground(color2);
+
 	}
 	settings.endGroup();
 	
-	
+	connect(servoTable, SIGNAL(cellChanged(int, int)), this, SLOT(updateServoQGCLabel(int, int)));
+
 	settings.beginGroup("controls");
 	for(int x = 0; x < 3; x++)
 	{
 		servoTable -> setItem(x, 0, new QTableWidgetItem(settings.value(QString::number(x)).toString(), 0));
+		servoTable -> item(x, 1) -> setFlags((servoTable -> item(x, 1)->flags() ^ Qt::ItemIsEditable ^ Qt::ItemIsSelectable));
+		servoTable -> item(x, 1) -> setBackground(color2);
 	}
 	settings.endGroup();
 	
@@ -320,6 +332,41 @@ void MainWindow::onOpenChannelWindowClicked()
 	connect(cancelButton, &QPushButton::clicked, this, &MainWindow::closeChannels);
 	l-> addWidget(cancelButton);
 	channelWindow -> show();
+}
+
+void MainWindow::updateChanQGCLabel(int row, int col)
+{
+	if(col == 0)
+	{
+		if(!chanTable -> item(row, 0) -> text().isNull() && !chanTable -> item(row, 0) -> text().isEmpty())
+		{
+			if((chanTable ->item(row, col) -> text().toInt()) < 16)
+			{
+				chanTable -> setItem(row, 1, new QTableWidgetItem(QString::number((chanTable ->item(row, col) -> text()).toInt() + 1)));
+			}
+			else
+			{
+				chanTable -> setItem(row, 1, new QTableWidgetItem(tr("Unused")));
+			}
+		}
+	}
+}
+void MainWindow::updateServoQGCLabel(int row, int col)
+{
+	if(col == 0)
+	{
+		if(!servoTable -> item(row, 0) -> text().isNull() && !servoTable -> item(row, 0) -> text().isEmpty())
+		{
+			if(servoTable ->item(row, col) -> text().toInt() < 16)
+			{
+				servoTable -> setItem(row, 1, new QTableWidgetItem(QString::number((servoTable ->item(row, col) -> text()).toInt() + 1)));
+			}
+			else
+			{
+				servoTable -> setItem(row, 1, new QTableWidgetItem("Unused"));
+			}
+		}
+	}
 }
 void MainWindow::saveChannels()
 {

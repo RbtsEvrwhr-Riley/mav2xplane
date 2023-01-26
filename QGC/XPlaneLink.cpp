@@ -91,10 +91,7 @@ QGCXPlaneLink::~QGCXPlaneLink()
         socket->deleteLater();
         socket = NULL;
     }
-
-    terminate();
-    wait();
-    exit(0);
+	// it should naturally stop
 }
 
 /**
