@@ -293,7 +293,7 @@ void MainWindow::onOpenChannelWindowClicked()
 	QLabel *servos = new QLabel(tr("XPlane Controls"));
 	l -> addWidget(servos);
 	QStringList servoLabels;
-	servoLabels << "Roll" << "Pitch" << "Yaw";
+	servoLabels << "Pitch" << "Roll" << "Yaw";
 	servoTable = new QTableWidget(3, 2);
 	servoTable -> setHorizontalHeaderLabels(topLabels);
 	servoTable -> setVerticalHeaderLabels(servoLabels);
